@@ -1,0 +1,10 @@
+venv/
+jigsaw_data/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.idea/
+toxic-detector-model/
+results/
+logs/
