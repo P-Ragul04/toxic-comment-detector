@@ -35,10 +35,31 @@ class ToxicityModel:
 
     def load(self):
         print(f"Loading model from: {MODEL_SOURCE} (device: {self.device})")
+
+        # Keep torch's internal thread pool small - reduces memory
+        # overhead on memory-constrained hosts (e.g. Render free tier's
+        # 512MB limit), where we're not compute-bound anyway.
+        torch.set_num_threads(1)
+
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE)
-        self.model = AutoModelForSequenceClassification.from_pretrained(MODEL_SOURCE)
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            MODEL_SOURCE,
+            low_cpu_mem_usage=True,  # avoids holding a duplicate copy of weights during load
+        )
         self.model.to(self.device)
         self.model.eval()
+
+        # Dynamic quantization: converts the model's Linear layers from
+        # fp32 to int8 after loading. Roughly a 4x reduction in the
+        # model's memory footprint and noticeably faster CPU inference,
+        # at a negligible accuracy cost for a classification head like
+        # this. Only applies on CPU (quantized ops aren't supported the
+        # same way on CUDA).
+        if self.device == "cpu":
+            print("Applying dynamic quantization for CPU deployment...")
+            self.model = torch.quantization.quantize_dynamic(
+                self.model, {torch.nn.Linear}, dtype=torch.qint8
+            )
 
         self._load_thresholds()
         self._loaded = True
