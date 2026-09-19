@@ -1,74 +1,77 @@
 """
 Model loading and inference logic for the toxic comment detector.
 
-MODEL_SOURCE can be either:
-  - a local directory (e.g. "../toxic-detector-model") - used for local dev
-  - a Hugging Face Hub repo id (e.g. "your-username/toxic-comment-detector")
-    - used once you've pushed the model, for portable deployment (Docker,
-      Hugging Face Spaces, etc. don't have your local training output)
+Uses ONNX Runtime instead of full PyTorch for inference. This is
+specifically to fit in memory-constrained free hosting tiers (e.g.
+Render free tier's 512MB limit) - importing full PyTorch + Transformers'
+modeling code alone can eat 300MB+ before a single request is served,
+which doesn't leave enough headroom. ONNX Runtime is a much lighter,
+inference-only engine (no autograd, no training machinery), and
+combined with int8 quantization (done ahead of time in
+training/export_onnx.py) the deployed footprint is dramatically
+smaller.
 
-Falls back to a 0.5 threshold for any label missing from thresholds.json
-(e.g. if you're running this against a model that hasn't had threshold
-tuning run on it yet).
+Training still uses full PyTorch (see training/train.py) - this
+lighter runtime is only for serving.
+
+MODEL_SOURCE should be a Hugging Face Hub repo id containing:
+  - model.onnx (the quantized ONNX model)
+  - tokenizer files (tokenizer.json, vocab.txt, etc.)
+  - thresholds.json (optional - falls back to 0.5 per label if absent)
 """
 
 import json
 import os
 
-import torch
+import numpy as np
+import onnxruntime as ort
 from huggingface_hub import hf_hub_download
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoTokenizer
 
-MODEL_SOURCE = os.environ.get("MODEL_SOURCE", "../toxic-detector-model")
+MODEL_SOURCE = os.environ.get("MODEL_SOURCE", "raaagul/toxic-comment-detector-onnx")
 LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 MAX_LENGTH = 128
 DEFAULT_THRESHOLD = 0.5
 
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
 class ToxicityModel:
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.tokenizer = None
-        self.model = None
+        self.session = None
         self.thresholds = {label: DEFAULT_THRESHOLD for label in LABELS}
         self._loaded = False
 
     def load(self):
-        print(f"Loading model from: {MODEL_SOURCE} (device: {self.device})")
-
-        # Keep torch's internal thread pool small - reduces memory
-        # overhead on memory-constrained hosts (e.g. Render free tier's
-        # 512MB limit), where we're not compute-bound anyway.
-        torch.set_num_threads(1)
+        print(f"Loading ONNX model from: {MODEL_SOURCE}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_SOURCE)
-        self.model = AutoModelForSequenceClassification.from_pretrained(
-            MODEL_SOURCE,
-            low_cpu_mem_usage=True,  # avoids holding a duplicate copy of weights during load
-        )
-        self.model.to(self.device)
-        self.model.eval()
 
-        # Dynamic quantization: converts the model's Linear layers from
-        # fp32 to int8 after loading. Roughly a 4x reduction in the
-        # model's memory footprint and noticeably faster CPU inference,
-        # at a negligible accuracy cost for a classification head like
-        # this. Only applies on CPU (quantized ops aren't supported the
-        # same way on CUDA).
-        if self.device == "cpu":
-            print("Applying dynamic quantization for CPU deployment...")
-            self.model = torch.quantization.quantize_dynamic(
-                self.model, {torch.nn.Linear}, dtype=torch.qint8
-            )
+        # Resolve the model.onnx file, whether MODEL_SOURCE is a local
+        # directory or a Hugging Face Hub repo id
+        if os.path.isdir(MODEL_SOURCE):
+            model_path = os.path.join(MODEL_SOURCE, "model.onnx")
+        else:
+            model_path = hf_hub_download(repo_id=MODEL_SOURCE, filename="model.onnx")
+
+        # Single-threaded session options - keeps memory/CPU overhead
+        # minimal on constrained hosts, since we're not throughput-bound
+        session_options = ort.SessionOptions()
+        session_options.intra_op_num_threads = 1
+        session_options.inter_op_num_threads = 1
+
+        self.session = ort.InferenceSession(
+            model_path, sess_options=session_options, providers=["CPUExecutionProvider"]
+        )
 
         self._load_thresholds()
         self._loaded = True
-        print("Model loaded successfully.")
+        print("ONNX model loaded successfully.")
 
     def _load_thresholds(self):
-        """Load tuned per-label thresholds if available, else fall back
-        to 0.5 for everything (with a warning, since that's what caused
-        the weaker rare-label performance we saw during evaluation)."""
         thresholds_path = None
 
         if os.path.isdir(MODEL_SOURCE):
@@ -90,9 +93,7 @@ class ToxicityModel:
         else:
             print(
                 "WARNING: thresholds.json not found - using default 0.5 "
-                "threshold for all labels. Run tune_thresholds.py and "
-                "include the output file with your model for better "
-                "results on rare labels."
+                "threshold for all labels."
             )
 
     def is_loaded(self):
@@ -106,12 +107,16 @@ class ToxicityModel:
             text,
             truncation=True,
             max_length=MAX_LENGTH,
-            return_tensors="pt",
-        ).to(self.device)
+            padding="max_length",
+            return_tensors="np",
+        )
 
-        with torch.no_grad():
-            logits = self.model(**inputs).logits
-            probs = torch.sigmoid(logits).cpu().numpy()[0]
+        onnx_inputs = {
+            "input_ids": inputs["input_ids"].astype(np.int64),
+            "attention_mask": inputs["attention_mask"].astype(np.int64),
+        }
+        logits = self.session.run(["logits"], onnx_inputs)[0]
+        probs = sigmoid(logits[0])
 
         scores = []
         any_flagged = False
@@ -126,3 +131,4 @@ class ToxicityModel:
 
 # Single shared instance, loaded once at API startup
 toxicity_model = ToxicityModel()
+

@@ -8,13 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CPU-only PyTorch explicitly first (much smaller than the
-# default CUDA build, and the container almost certainly has no GPU
-# on free hosting tiers). requirements.txt's torch entry will then be
-# satisfied already and skipped.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-# Install remaining Python dependencies
+# Install Python dependencies (onnxruntime instead of full torch -
+# much smaller and lighter on memory for inference-only serving)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -25,7 +20,7 @@ COPY main.py model.py schemas.py ./
 # rather than baked into the image, so MODEL_SOURCE must be set to
 # your HF repo id. This keeps the image small and lets you update the
 # model without rebuilding the image.
-ENV MODEL_SOURCE="raaagul/toxic-comment-detector"
+ENV MODEL_SOURCE="raaagul/toxic-comment-detector-onnx"
 
 EXPOSE 8000
 
