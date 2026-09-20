@@ -10,9 +10,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # No local model folder exists in the repo (it's on Hugging Face
-      # Hub, see .gitignore) - tests download from there instead.
-      MODEL_SOURCE: raaagul/toxic-comment-detector
+      # No local model folders exist in the repo (they're on Hugging
+      # Face Hub, see .gitignore) - tests download from there instead.
+      MODEL_SOURCE: raaagul/toxic-comment-detector-onnx
+      TANGLISH_MODEL_SOURCE: raaagul/tanglish-offensive-detector-onnx
 
     steps:
       - name: Checkout code
@@ -28,9 +29,6 @@ jobs:
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('api/requirements.txt') }}
-
-      - name: Install CPU-only PyTorch
-        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         working-directory: ./api

@@ -79,3 +79,31 @@ def test_predict_missing_field_rejected(client):
 def test_predict_text_too_long_rejected(client):
     response = client.post("/predict", json={"text": "a" * 6000})
     assert response.status_code == 422
+
+
+def test_predict_tanglish_offensive(client):
+    response = client.post(
+        "/predict-tanglish", json={"text": "nee oru periya loosu paiyan da"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "is_offensive" in data
+    assert "probability" in data
+    assert 0.0 <= data["probability"] <= 1.0
+
+
+def test_predict_tanglish_benign(client):
+    response = client.post(
+        "/predict-tanglish", json={"text": "indha padam romba nalla irundhuchu, thanks"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_offensive"] is False
+
+
+def test_predict_tanglish_response_shape(client):
+    response = client.post("/predict-tanglish", json={"text": "seri bro nalla iruken"})
+    data = response.json()
+    assert "text" in data
+    assert "is_offensive" in data
+    assert "probability" in data

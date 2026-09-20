@@ -14,13 +14,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY main.py model.py schemas.py ./
+COPY main.py model.py tanglish_model.py schemas.py ./
 
-# The model is pulled from Hugging Face Hub at container startup
-# rather than baked into the image, so MODEL_SOURCE must be set to
-# your HF repo id. This keeps the image small and lets you update the
-# model without rebuilding the image.
+# Models are pulled from Hugging Face Hub at container startup rather
+# than baked into the image, so these must point to your HF repos.
 ENV MODEL_SOURCE="raaagul/toxic-comment-detector-onnx"
+ENV TANGLISH_MODEL_SOURCE="raaagul/tanglish-offensive-detector-onnx"
 
 EXPOSE 8000
 

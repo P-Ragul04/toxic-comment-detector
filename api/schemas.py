@@ -28,3 +28,9 @@ class PredictResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
+
+
+class TanglishPredictResponse(BaseModel):
+    text: str
+    is_offensive: bool
+    probability: float  # P(offensive)

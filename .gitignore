@@ -8,3 +8,8 @@ __pycache__/
 toxic-detector-model/
 results/
 logs/
+
+onnx-model/
+onnx-model-tanglish/
+tanglish-detector-model/
+results_tanglish/
