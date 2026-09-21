@@ -198,7 +198,8 @@ st.markdown(
         letter-spacing: -0.01em;
     }
 
-    /* Hero title */
+    /* Hero title - gradient text with a slow, subtle glow pulse behind
+       it, like a distant star/nebula rather than a flat fill */
     .hero-title {
         font-family: 'Space Grotesk', sans-serif;
         font-weight: 700;
@@ -209,6 +210,22 @@ st.markdown(
         background-clip: text;
         color: transparent;
         margin-bottom: 0.3rem;
+        filter: drop-shadow(0 0 18px rgba(139, 124, 255, 0.5))
+                drop-shadow(0 0 36px rgba(47, 214, 255, 0.25));
+        animation: title-glow-pulse 4s ease-in-out infinite;
+    }
+    @keyframes title-glow-pulse {
+        0%, 100% {
+            filter: drop-shadow(0 0 18px rgba(139, 124, 255, 0.5))
+                    drop-shadow(0 0 36px rgba(47, 214, 255, 0.25));
+        }
+        50% {
+            filter: drop-shadow(0 0 26px rgba(139, 124, 255, 0.7))
+                    drop-shadow(0 0 48px rgba(47, 214, 255, 0.4));
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .hero-title { animation: none; }
     }
     .hero-sub {
         color: var(--text-muted);
@@ -244,11 +261,23 @@ st.markdown(
         font-family: 'Space Grotesk', sans-serif !important;
         font-weight: 600 !important;
         box-shadow: 0 0 22px rgba(139, 124, 255, 0.35);
-        transition: box-shadow 0.2s ease, transform 0.2s ease;
+        transition: box-shadow 0.2s ease, transform 0.15s ease, background 0.15s ease;
     }
     button[kind="primary"]:hover {
         box-shadow: 0 0 32px rgba(47, 214, 255, 0.45);
         transform: translateY(-1px);
+    }
+    /* Momentary dark flash while the button is actually held down -
+       reverts automatically the instant it's released, no JS needed */
+    button[kind="primary"]:active {
+        background: linear-gradient(120deg, #12071f, #051019) !important;
+        box-shadow: 0 0 34px rgba(139, 124, 255, 0.8), 0 0 60px rgba(47, 214, 255, 0.4) !important;
+        transform: scale(0.96) translateY(0) !important;
+    }
+    button[kind="secondary"]:active {
+        transform: scale(0.96) !important;
+        border-color: var(--accent-b) !important;
+        box-shadow: 0 0 16px rgba(47, 214, 255, 0.3) !important;
     }
 
     /* Result verdict banner */
@@ -342,6 +371,31 @@ st.markdown(
         margin-top: 2rem;
     }
 
+    /* Language toggle pills (built from st.button, not st.radio - far
+       more reliable to style than fighting Streamlit's native radio
+       DOM, which didn't consistently expose a matchable checked state) */
+    div[data-testid="stButton"] button[kind="secondary"] {
+        background: var(--panel) !important;
+        border: 1px solid var(--panel-border) !important;
+        color: var(--text-muted) !important;
+        border-radius: 999px !important;
+        font-weight: 500 !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stButton"] button[kind="secondary"]:hover {
+        border-color: var(--accent-b) !important;
+        color: var(--text-primary) !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"] {
+        border-radius: 999px !important;
+    }
+    .auto-detect-note {
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        margin: -0.3rem 0 0.8rem 0;
+        font-style: italic;
+    }
+
     hr {
         border-color: var(--panel-border) !important;
     }
@@ -357,10 +411,21 @@ with st.sidebar:
         '<div class="status-pill"><span class="status-dot"></span>Connected to live API</div>',
         unsafe_allow_html=True,
     )
-    st.caption(
-        "This demo calls a live FastAPI service (DistilBERT, fine-tuned "
-        "on the Jigsaw Toxic Comment dataset, served via ONNX Runtime)."
-    )
+
+    current_mode = st.session_state.get("language_mode", "English")
+    if current_mode == "English":
+        st.caption(
+            "This demo calls a live FastAPI service running a DistilBERT "
+            "model fine-tuned on the Jigsaw Toxic Comment dataset (English, "
+            "6-category multi-label), served via ONNX Runtime."
+        )
+    else:
+        st.caption(
+            "This demo calls a live FastAPI service running a second "
+            "DistilBERT model, fine-tuned on romanized Tamil-English "
+            "(Tanglish) YouTube comments for binary offensive-language "
+            "detection, served via ONNX Runtime."
+        )
 
     with st.expander("Advanced"):
         api_url = st.text_input("API URL", value=DEFAULT_API_URL).rstrip("/")
@@ -385,32 +450,85 @@ with st.sidebar:
 
 # --- Hero ---
 st.markdown('<div class="hero-title">Toxic Comment Detector</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="hero-sub">A fine-tuned DistilBERT model scores text across six categories '
-    '— toxic, severe toxic, obscene, threat, insult, identity hate — and flags anything that '
-    'crosses a tuned decision threshold. Enter a comment below to see it in action.</div>',
-    unsafe_allow_html=True,
-)
+
+if "language_mode" not in st.session_state:
+    st.session_state.language_mode = "English"
+
+
+def set_mode(new_mode: str):
+    st.session_state.language_mode = new_mode
+
+
+col1, col2, _ = st.columns([1, 1, 3])
+with col1:
+    st.button(
+        "English",
+        type="primary" if st.session_state.language_mode == "English" else "secondary",
+        use_container_width=True,
+        on_click=set_mode,
+        args=("English",),
+    )
+with col2:
+    st.button(
+        "Tanglish",
+        type="primary" if st.session_state.language_mode == "Tanglish" else "secondary",
+        use_container_width=True,
+        on_click=set_mode,
+        args=("Tanglish",),
+    )
+
+mode = st.session_state.language_mode
+
+if mode == "English":
+    st.markdown(
+        '<div class="hero-sub">A fine-tuned DistilBERT model scores text across six categories '
+        '— toxic, severe toxic, obscene, threat, insult, identity hate — and flags anything that '
+        'crosses a tuned decision threshold.</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div class="hero-sub">A second DistilBERT model, fine-tuned on romanized Tamil-English '
+        '(Tanglish) YouTube comments, classifies text as offensive or not — e.g. '
+        '<em>"nee oru periya loosu paiyan da"</em>.</div>',
+        unsafe_allow_html=True,
+    )
 
 text = st.text_area(
     "Comment text",
-    placeholder="Type or paste a comment here...",
+    placeholder="Type or paste a comment here..."
+    if mode == "English"
+    else "Type or paste Tanglish text here...",
     height=120,
     label_visibility="collapsed",
+    key="comment_input",
 )
 
-submit = st.button("Analyze", type="primary", use_container_width=False)
+def clear_text():
+    st.session_state.comment_input = ""
+    st.session_state.show_clear_toast = True
 
 
-def call_api(api_url: str, text: str, max_retries: int = 2):
-    """Call the /predict endpoint. Free-tier hosts (Render) spin down
+btn_col1, btn_col2, _ = st.columns([1, 1, 3])
+with btn_col1:
+    submit = st.button("Analyze", type="primary", use_container_width=True)
+with btn_col2:
+    st.button("Clear", type="secondary", use_container_width=True, on_click=clear_text)
+
+if st.session_state.get("show_clear_toast", False):
+    st.toast("Cleared ✦", icon="🌌")
+    st.session_state.show_clear_toast = False
+
+
+def call_api(api_url: str, endpoint: str, text: str, max_retries: int = 2):
+    """Call a /predict endpoint. Free-tier hosts (Render) spin down
     after inactivity, so the first request after idle time can take
     ~50s to wake the service - we show a friendly message and retry
     rather than just showing a raw timeout error."""
     for attempt in range(max_retries + 1):
         try:
             response = requests.post(
-                f"{api_url}/predict", json={"text": text}, timeout=70
+                f"{api_url}{endpoint}", json={"text": text}, timeout=70
             )
             response.raise_for_status()
             return response.json(), None
@@ -431,58 +549,88 @@ if submit:
     if not text.strip():
         st.warning("Please enter some text first.")
     else:
+        endpoint = "/predict" if mode == "English" else "/predict-tanglish"
         with st.spinner(
             "Analyzing... (if the API has been idle, this can take up to 50s to wake up)"
         ):
             start = time.time()
-            result, error = call_api(api_url, text)
+            result, error = call_api(api_url, endpoint, text)
             elapsed = time.time() - start
 
         if error:
             st.error(error)
         else:
-            verdict_class = "flagged" if result["is_toxic"] else "safe"
-            verdict_text = "⚠ Flagged as toxic" if result["is_toxic"] else "✓ Not flagged"
-            st.markdown(
-                f'<div class="verdict {verdict_class}">{verdict_text}</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div class="response-time">Response time: {elapsed:.1f}s</div>',
-                unsafe_allow_html=True,
-            )
+            if mode == "English":
+                verdict_class = "flagged" if result["is_toxic"] else "safe"
+                verdict_text = "⚠ Flagged as toxic" if result["is_toxic"] else "✓ Not flagged"
+                st.markdown(
+                    f'<div class="verdict {verdict_class}">{verdict_text}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div class="response-time">Response time: {elapsed:.1f}s</div>',
+                    unsafe_allow_html=True,
+                )
 
-            st.markdown('<div class="breakdown-heading">Per-label breakdown</div>', unsafe_allow_html=True)
-            scores_by_label = {s["label"]: s for s in result["scores"]}
+                st.markdown('<div class="breakdown-heading">Per-label breakdown</div>', unsafe_allow_html=True)
+                scores_by_label = {s["label"]: s for s in result["scores"]}
 
-            rows_html = ""
-            for label in LABELS:
-                score = scores_by_label[label]
-                prob = score["probability"]
-                flagged = score["flagged"]
-                label_display = label.replace("_", " ").title()
-                flag_span = '<span class="label-flag">FLAGGED</span>' if flagged else ""
-                bar_class = "flagged" if flagged else "clear"
-                rows_html += f"""
-                <div class="label-row">
-                    <div class="label-header">
-                        <span class="label-name">{label_display}{flag_span}</span>
-                        <span class="label-pct">{prob:.1%}</span>
+                rows_html = ""
+                for label in LABELS:
+                    score = scores_by_label[label]
+                    prob = score["probability"]
+                    flagged = score["flagged"]
+                    label_display = label.replace("_", " ").title()
+                    flag_span = '<span class="label-flag">FLAGGED</span>' if flagged else ""
+                    bar_class = "flagged" if flagged else "clear"
+                    rows_html += f"""
+                    <div class="label-row">
+                        <div class="label-header">
+                            <span class="label-name">{label_display}{flag_span}</span>
+                            <span class="label-pct">{prob:.1%}</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill {bar_class}" style="width:{prob*100:.1f}%"></div>
+                        </div>
                     </div>
-                    <div class="bar-track">
-                        <div class="bar-fill {bar_class}" style="width:{prob*100:.1f}%"></div>
-                    </div>
-                </div>
-                """
-            st.markdown(rows_html, unsafe_allow_html=True)
+                    """
+                st.markdown(rows_html, unsafe_allow_html=True)
+            else:
+                # Tanglish: binary result, simpler display
+                is_offensive = result["is_offensive"]
+                prob = result["probability"]
+                verdict_class = "flagged" if is_offensive else "safe"
+                verdict_text = "⚠ Flagged as offensive" if is_offensive else "✓ Not flagged"
+                st.markdown(
+                    f'<div class="verdict {verdict_class}">{verdict_text}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div class="response-time">Response time: {elapsed:.1f}s</div>',
+                    unsafe_allow_html=True,
+                )
 
-            with st.expander("Raw JSON response"):
-                st.json(result)
+                bar_class = "flagged" if is_offensive else "clear"
+                st.markdown(
+                    f"""
+                    <div class="label-row">
+                        <div class="label-header">
+                            <span class="label-name">Offensive probability</span>
+                            <span class="label-pct">{prob:.1%}</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill {bar_class}" style="width:{prob*100:.1f}%"></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 st.divider()
 st.markdown(
-    '<div class="footnote">Note: This is a portfolio/demo project, not a production '
-    "moderation tool. The model can make mistakes, especially on rare categories like "
-    "'threat' and 'severe_toxic' where training data was limited.</div>",
+    '<div class="footnote">Note: this is a portfolio/demo project, not a production '
+    "moderation tool. Both models can make mistakes — the English model especially on rare "
+    "categories like 'threat' and 'severe_toxic', and the Tanglish model on informal or "
+    "ambiguous phrasing where even human annotators often disagree.</div>",
     unsafe_allow_html=True,
 )
