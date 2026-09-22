@@ -489,8 +489,7 @@ if mode == "English":
 else:
     st.markdown(
         '<div class="hero-sub">A second DistilBERT model, fine-tuned on romanized Tamil-English '
-        '(Tanglish) YouTube comments, classifies text as offensive or not — e.g. '
-        '<em>"nee oru periya loosu paiyan da"</em>.</div>',
+        '(Tanglish) YouTube comments, classifies text as offensive or not </div>',
         unsafe_allow_html=True,
     )
 
