@@ -18,6 +18,30 @@ MODEL_SOURCE = os.environ.get(
 MAX_LENGTH = 128
 THRESHOLD = 0.5  # kept as a standard argmax-equivalent cutoff (see project notes on why tuning wasn't applied here)
 
+# Deterministic safety net, layered under the ML model. The model's
+# coverage of severe slurs is limited by what survived the Latin-script
+# filter in training (see training/train_tanglish.py) - some severe
+# terms were likely written more often in native Tamil script in the
+# source corpus and underrepresented in what the model actually
+# trained on. Real moderation systems commonly pair a probabilistic
+# model with a hardcoded blocklist for exactly this reason: the model
+# handles nuance and context, the blocklist guarantees known-severe
+# terms are never missed regardless of what the model predicts.
+# Extend this list as needed - it's intentionally a small, high-confidence
+# set rather than an attempt at exhaustive coverage.
+SEVERE_TERM_BLOCKLIST = {
+    "thevidiya",
+    "otha",
+    "punda",
+    "soothu",
+    "ommala",
+}
+
+
+def contains_blocked_term(text: str) -> bool:
+    lowered = text.lower()
+    return any(term in lowered for term in SEVERE_TERM_BLOCKLIST)
+
 
 def softmax(x):
     e_x = np.exp(x - np.max(x))
@@ -72,6 +96,13 @@ class TanglishModel:
         logits = self.session.run(["logits"], onnx_inputs)[0][0]
         probs = softmax(logits)
         offensive_prob = float(probs[1])
+
+        # Blocklist override: if a known severe term is present, flag
+        # it regardless of what the model's probability says. This
+        # never un-flags something the model already caught - it only
+        # adds coverage, never removes it.
+        if contains_blocked_term(text):
+            offensive_prob = max(offensive_prob, 0.99)
 
         return {
             "text": text,
