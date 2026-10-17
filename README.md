@@ -107,6 +107,3 @@ streamlit run app.py
 
 This is a portfolio project, not a production moderation tool. Both models can make mistakes — the English model especially on rare categories (`threat`, `severe_toxic`) where training data was limited, and the Tanglish model on informal or ambiguous phrasing where even human annotators in the original dataset often disagreed. The free-tier API also spins down after inactivity, so the first request after idle time can take up to ~50 seconds to respond.
 
-## License
-
-MIT
