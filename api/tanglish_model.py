@@ -35,6 +35,11 @@ SEVERE_TERM_BLOCKLIST = {
     "punda",
     "soothu",
     "ommala",
+    "munda",
+    "molai",
+    "sunni",
+    "gomma",
+    "goppan",
 }
 
 
