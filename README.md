@@ -36,7 +36,7 @@ The API is Dockerized and deployed on **Render** (free tier). Model weights aren
 |Base model|`distilbert-base-uncased`|`distilbert-base-uncased`|
 |Task|Multi-label (6 classes)|Binary|
 |Training data|[Jigsaw Toxic Comment Classification](https://huggingface.co/datasets/jigsaw_toxicity_pred) (\~160k comments)|[offenseval\_dravidian](https://huggingface.co/datasets/community-datasets/offenseval_dravidian) (Tamil subset, filtered to Latin-script rows)|
-|Macro F1|0.61 (default threshold) → 0.605 (tuned)|0.79|
+|Macro F1|0.597 → 0.605 (holdout)|0.79|
 |Deployment format|ONNX, int8 quantized|ONNX, int8 quantized|
 |Model size (quantized)|64 MB|64 MB|
 
